@@ -113,6 +113,8 @@ enum MACHINE_STATE {
 // Global Variables
 volatile MACHINE_STATE machine_state = INACTIVE_STATE;
 
+portMUX_TYPE mdb_mux = portMUX_INITIALIZER_UNLOCKED;
+
 volatile bool reset_cashless_todo = false;
 volatile bool session_begin_todo = false;
 volatile bool session_end_todo = false;
@@ -123,7 +125,8 @@ volatile bool outsequence_todo = false;
 volatile bool reader_cancel_todo = false;
 
 // Function Prototypes
-uint16_t read_9(uint8_t *checksum);
+// Function Prototypes
+uint16_t read_9(uint8_t *checksum, bool wait_forever = true);
 void write_9(uint16_t nth9);
 void transmitPayloadByUART9(uint8_t *mdb_payload, uint8_t length);
 void mdb_loop(void *pvParameters);
@@ -306,11 +309,16 @@ bool confirmPurchase(int transactionId) {
 
 
 // Read 9-bit data
-uint16_t read_9(uint8_t *checksum) {
+// Read 9-bit data
+uint16_t read_9(uint8_t *checksum, bool wait_forever) {
   uint16_t coming_read = 0;
+  unsigned long start_wait = micros();
 
-  while (digitalRead(pin_mdb_rx))
-    ;
+  while (digitalRead(pin_mdb_rx)) {
+      if (!wait_forever && (micros() - start_wait > 5000)) { // 5ms timeout
+          return 0xFFFF; // Error code
+      }
+  }
 
   delayMicroseconds(156);
   for (uint8_t x = 0; x < 9; x++) {
@@ -654,7 +662,12 @@ void mdb_loop(void *pvParameters) {
     // MDB requires response within 5ms - use minimal delay to prevent task starvation
     taskYIELD();  // Allow other tasks to run if needed, but don't block
 
-    uint16_t coming_read = read_9(&checksum);
+    // Wait for command byte (wait_forever = true)
+    uint16_t coming_read = read_9(&checksum, true);
+    
+    // ENTER CRITICAL SECTION
+    portENTER_CRITICAL(&mdb_mux);
+    
     unsigned long cmd_received_time = micros();  // Time when we have the command byte
 
     if (coming_read & BIT_MODE_SET) {
@@ -670,7 +683,10 @@ void mdb_loop(void *pvParameters) {
 
         switch (coming_read & BIT_CMD_SET) {
           case RESET: {
-            read_9((uint8_t*) 0);
+            if (read_9((uint8_t*) 0, false) == 0xFFFF) { // Timeout
+                fastSyslog.logf(LOG_ERR, "MDB: RESET timeout");
+                break;
+            }
 
             MACHINE_STATE prev_state = machine_state;
             machine_state = INACTIVE_STATE;
@@ -693,17 +709,30 @@ void mdb_loop(void *pvParameters) {
             break;
           }
           case SETUP: {
-            uint16_t sub_cmd_raw = read_9((uint8_t*) 0);  // Don't accumulate checksum
+            uint16_t sub_cmd_raw = read_9((uint8_t*) 0, false);
+            if (sub_cmd_raw == 0xFFFF) {
+                fastSyslog.logf(LOG_ERR, "MDB: SETUP sub_cmd timeout");
+                break;
+            }
             uint8_t sub_cmd = (uint8_t)(sub_cmd_raw & 0xFF);
 
             switch (sub_cmd) {
               case CONFIG_DATA: {
                 uint8_t setup_data[5]; // 4 data bytes + 1 checksum byte
+                bool timeout = false;
 
                 // Read all data including received checksum (don't use auto-accumulation)
                 for (int i = 0; i < 5; i++) {
-                    uint16_t raw = read_9((uint8_t*) 0);
+                    uint16_t raw = read_9((uint8_t*) 0, false);
+                    if (raw == 0xFFFF) {
+                        timeout = true;
+                        break;
+                    }
                     setup_data[i] = (uint8_t)(raw & 0xFF);
+                }
+                if (timeout) {
+                    fastSyslog.logf(LOG_ERR, "MDB: CONFIG_DATA timeout");
+                    break;
                 }
 
                 // Calculate checksum manually: command + subcommand + data bytes
@@ -746,11 +775,20 @@ void mdb_loop(void *pvParameters) {
               }
               case MAX_MIN_PRICES: {
                 uint8_t price_data[5]; // 4 data bytes + 1 checksum byte
+                bool timeout = false;
 
                 // Read all data including received checksum (don't use auto-accumulation)
                 for (int i = 0; i < 5; i++) {
-                    uint16_t raw = read_9((uint8_t*) 0);
+                    uint16_t raw = read_9((uint8_t*) 0, false);
+                    if (raw == 0xFFFF) {
+                        timeout = true;
+                        break;
+                    }
                     price_data[i] = (uint8_t)(raw & 0xFF);
+                }
+                if (timeout) {
+                    fastSyslog.logf(LOG_ERR, "MDB: MAX_MIN_PRICES timeout");
+                    break;
                 }
 
                 // Calculate checksum manually: command + subcommand + data bytes
@@ -775,7 +813,10 @@ void mdb_loop(void *pvParameters) {
             break;
           }
           case POLL: {
-            read_9((uint8_t*) 0);
+            if (read_9((uint8_t*) 0, false) == 0xFFFF) {
+                fastSyslog.logf(LOG_ERR, "MDB: POLL timeout");
+                break;
+            }
             
             // Periodic state logging and stuck state detection
             static uint16_t poll_counter = 0;
@@ -844,17 +885,30 @@ void mdb_loop(void *pvParameters) {
             break;
           }
           case VEND: {
-            uint16_t sub_cmd_raw = read_9((uint8_t*) 0);  // Don't accumulate checksum
+            uint16_t sub_cmd_raw = read_9((uint8_t*) 0, false);
+            if (sub_cmd_raw == 0xFFFF) {
+                fastSyslog.logf(LOG_ERR, "MDB: VEND sub_cmd timeout");
+                break;
+            }
             uint8_t sub_cmd = (uint8_t)(sub_cmd_raw & 0xFF);
 
             switch(sub_cmd) {
               case VEND_REQUEST: {
                 uint8_t vend_data[5]; // 4 data bytes + 1 checksum byte
+                bool timeout = false;
 
                 // Read all data including received checksum (don't use auto-accumulation)
                 for (int i = 0; i < 5; i++) {
-                    uint16_t raw = read_9((uint8_t*) 0);
+                    uint16_t raw = read_9((uint8_t*) 0, false);
+                    if (raw == 0xFFFF) {
+                        timeout = true;
+                        break;
+                    }
                     vend_data[i] = (uint8_t)(raw & 0xFF);
+                }
+                if (timeout) {
+                    fastSyslog.logf(LOG_ERR, "MDB: VEND_REQUEST timeout");
+                    break;
                 }
 
                 // Calculate checksum manually: command + subcommand + data bytes
@@ -881,7 +935,11 @@ void mdb_loop(void *pvParameters) {
               case VEND_CANCEL: {
                 uint8_t checksum_data[1];
 
-                uint16_t raw = read_9((uint8_t*) 0);
+                uint16_t raw = read_9((uint8_t*) 0, false);
+                if (raw == 0xFFFF) {
+                    fastSyslog.logf(LOG_ERR, "MDB: VEND_CANCEL timeout");
+                    break;
+                }
                 checksum_data[0] = (uint8_t)(raw & 0xFF);
 
                 // Calculate checksum manually: command + subcommand
@@ -898,11 +956,20 @@ void mdb_loop(void *pvParameters) {
               }
               case VEND_SUCCESS: {
                 uint8_t success_data[3]; // 2 data bytes + 1 checksum byte
+                bool timeout = false;
 
                 // Read all data including received checksum (don't use auto-accumulation)
                 for (int i = 0; i < 3; i++) {
-                    uint16_t raw = read_9((uint8_t*) 0);
+                    uint16_t raw = read_9((uint8_t*) 0, false);
+                    if (raw == 0xFFFF) {
+                        timeout = true;
+                        break;
+                    }
                     success_data[i] = (uint8_t)(raw & 0xFF);
+                }
+                if (timeout) {
+                    fastSyslog.logf(LOG_ERR, "MDB: VEND_SUCCESS timeout");
+                    break;
                 }
 
                 // Calculate checksum manually: command + subcommand + data bytes
@@ -928,7 +995,11 @@ void mdb_loop(void *pvParameters) {
               case VEND_FAILURE: {
                 uint8_t checksum_data[1];
 
-                uint16_t raw = read_9((uint8_t*) 0);
+                uint16_t raw = read_9((uint8_t*) 0, false);
+                if (raw == 0xFFFF) {
+                    fastSyslog.logf(LOG_ERR, "MDB: VEND_FAILURE timeout");
+                    break;
+                }
                 checksum_data[0] = (uint8_t)(raw & 0xFF);
 
                 // Calculate checksum manually: command + subcommand
@@ -947,7 +1018,11 @@ void mdb_loop(void *pvParameters) {
               case SESSION_COMPLETE: {
                 uint8_t checksum_data[1];
 
-                uint16_t raw = read_9((uint8_t*) 0);
+                uint16_t raw = read_9((uint8_t*) 0, false);
+                if (raw == 0xFFFF) {
+                    fastSyslog.logf(LOG_ERR, "MDB: SESSION_COMPLETE timeout");
+                    break;
+                }
                 checksum_data[0] = (uint8_t)(raw & 0xFF);
 
                 // Calculate checksum manually: command + subcommand
@@ -964,11 +1039,20 @@ void mdb_loop(void *pvParameters) {
               }
               case CASH_SALE: {
                 uint8_t cash_data[5]; // 4 data bytes + 1 checksum byte
+                bool timeout = false;
 
                 // Read all data including received checksum (don't use auto-accumulation)
                 for (int i = 0; i < 5; i++) {
-                    uint16_t temp = read_9((uint8_t*) 0);
+                    uint16_t temp = read_9((uint8_t*) 0, false);
+                    if (temp == 0xFFFF) {
+                        timeout = true;
+                        break;
+                    }
                     cash_data[i] = (uint8_t)(temp & 0xFF);
+                }
+                if (timeout) {
+                    fastSyslog.logf(LOG_ERR, "MDB: CASH_SALE timeout");
+                    break;
                 }
 
                 // Calculate checksum manually: command + subcommand + data bytes
@@ -997,14 +1081,22 @@ void mdb_loop(void *pvParameters) {
             break;
           }
           case READER: {
-            uint16_t sub_cmd_raw = read_9((uint8_t*) 0);  // Don't accumulate checksum
+            uint16_t sub_cmd_raw = read_9((uint8_t*) 0, false);
+            if (sub_cmd_raw == 0xFFFF) {
+                fastSyslog.logf(LOG_ERR, "MDB: READER sub_cmd timeout");
+                break;
+            }
             uint8_t sub_cmd = (uint8_t)(sub_cmd_raw & 0xFF);
 
             switch(sub_cmd) {
               case READER_DISABLE: {
                 uint8_t checksum_data[1];
 
-                uint16_t raw = read_9((uint8_t*) 0);
+                uint16_t raw = read_9((uint8_t*) 0, false);
+                if (raw == 0xFFFF) {
+                    fastSyslog.logf(LOG_ERR, "MDB: READER_DISABLE timeout");
+                    break;
+                }
                 checksum_data[0] = (uint8_t)(raw & 0xFF);
 
                 // Calculate checksum manually: command + subcommand
@@ -1022,7 +1114,11 @@ void mdb_loop(void *pvParameters) {
               case READER_ENABLE: {
                 uint8_t checksum_data[1];
 
-                uint16_t raw = read_9((uint8_t*) 0);
+                uint16_t raw = read_9((uint8_t*) 0, false);
+                if (raw == 0xFFFF) {
+                    fastSyslog.logf(LOG_ERR, "MDB: READER_ENABLE timeout");
+                    break;
+                }
                 checksum_data[0] = (uint8_t)(raw & 0xFF);
 
                 // Calculate checksum manually: command + subcommand
@@ -1040,7 +1136,11 @@ void mdb_loop(void *pvParameters) {
               case READER_CANCEL: {
                 uint8_t checksum_data[1];
 
-                uint16_t raw = read_9((uint8_t*) 0);
+                uint16_t raw = read_9((uint8_t*) 0, false);
+                if (raw == 0xFFFF) {
+                    fastSyslog.logf(LOG_ERR, "MDB: READER_CANCEL timeout");
+                    break;
+                }
                 checksum_data[0] = (uint8_t)(raw & 0xFF);
 
                 // Calculate checksum manually: command + subcommand
@@ -1060,17 +1160,30 @@ void mdb_loop(void *pvParameters) {
             break;
           }
           case EXPANSION: {
-            uint16_t sub_cmd_raw = read_9((uint8_t*) 0);  // Don't accumulate checksum
+            uint16_t sub_cmd_raw = read_9((uint8_t*) 0, false);
+            if (sub_cmd_raw == 0xFFFF) {
+                fastSyslog.logf(LOG_ERR, "MDB: EXPANSION sub_cmd timeout");
+                break;
+            }
             uint8_t sub_cmd = (uint8_t)(sub_cmd_raw & 0xFF);
 
             switch(sub_cmd) {
               case REQUEST_ID: {
                 uint8_t id_data[30]; // 29 data bytes + 1 checksum byte
+                bool timeout = false;
 
                 // Read all data including received checksum (don't use auto-accumulation)
                 for (int i = 0; i < 30; i++) {
-                    uint16_t raw = read_9((uint8_t*) 0);
+                    uint16_t raw = read_9((uint8_t*) 0, false);
+                    if (raw == 0xFFFF) {
+                        timeout = true;
+                        break;
+                    }
                     id_data[i] = (uint8_t)(raw & 0xFF);
+                }
+                if (timeout) {
+                    fastSyslog.logf(LOG_ERR, "MDB: REQUEST_ID timeout");
+                    break;
                 }
 
                 // Log first few bytes and checksum for debugging
@@ -1146,6 +1259,9 @@ void mdb_loop(void *pvParameters) {
         digitalWrite(pin_mdb_led, LOW);
       }
     }
+    
+    // EXIT CRITICAL SECTION
+    portEXIT_CRITICAL(&mdb_mux);
   }
 }
 void wifi_loop(void *pvParameters) {
