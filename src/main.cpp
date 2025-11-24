@@ -13,20 +13,17 @@
 #include <WiFiUdp.h>
 
 // Define max log level before including FastSyslog.h to filter logs at compile time
-// Uncomment one of the following lines to set your desired max log level:
 #define FAST_SYSLOG_MAX_LEVEL FAST_SYSLOG_ERR      // Only errors and higher priority
-// #define FAST_SYSLOG_MAX_LEVEL FAST_SYSLOG_WARNING  // Warnings, errors, and higher
-// #define FAST_SYSLOG_MAX_LEVEL FAST_SYSLOG_INFO     // Info, warnings, errors (no debug)
-// #define FAST_SYSLOG_MAX_LEVEL FAST_SYSLOG_DEBUG    // All logs (default)
 
 #include "FastSyslog.h"
 #define ESP32_RTOS
-const char* api_key = "redacted";
+#include "secrets.h"
+const char* api_key = API_KEY;
 #include <OTA.h>
-const char* api_base_url = "http://10.100.1.55:8080"; // Replace with actual API URL
+const char* api_base_url = API_BASE_URL;
 
-const char* ssid = "redacted";  // Change to your WiFi SSID
-const char* password = "redacted";  // Change to your WiFi password
+const char* ssid = WIFI_SSID;
+const char* password = WIFI_PASSWORD;
 String resolved_api_base_url = "";
 
 
@@ -43,7 +40,7 @@ bool vend_success = false;
 #define pin_mdb_led 13
 #define pin_button   0
 
-#define MACHINE_ID "getraenkeautomat"
+
 
 // Macros
 #define to_scale_factor(p, x, y) (p / x / pow(10, -(y)))
@@ -386,7 +383,7 @@ void connectToWiFi() {
         Serial.println("✅ mDNS responder started");
         
         // Initialize FastSyslog with hardcoded IP first (will be updated by resolveServerHostname)
-        if (!fastSyslog.begin("10.100.219.138", 5140, "getraenkeautomat", "getraenkeautomat")) {
+        if (!fastSyslog.begin(SYSLOG_SERVER, SYSLOG_PORT, MACHINE_ID, MACHINE_ID)) {
             Serial.println("Failed to initialize FastSyslog!");
         }
         
@@ -551,11 +548,7 @@ bool getAndVerifyBalance(const char* uidString) {
 
 // Process the purchase transaction
 int processPurchase(const char* uidString) {
-  //if (current_user_balance < current_item_price) {
-  //    Serial.println("❌ Insufficient balance");
-  //    vend_denied_todo = true;
-  //    return -1;
-  //}
+
   
   Serial.printf("Current Item Price: %d\n", current_item_price);
   
@@ -582,7 +575,7 @@ void reader_loop(void *pvParameters) {
 
   Serial.println("Entering button_task...");
   FAST_LOG_DEBUG("entering button task");
-  //reset_cashless_todo = true;
+
   vTaskDelay(1000 / portTICK_PERIOD_MS);
 
   for (;;) {
@@ -606,17 +599,14 @@ void reader_loop(void *pvParameters) {
           continue;
       }
 
-      //Serial.println("✅ Card Read Successfully!");
+
 
       // Format UID string
       formatUidString(uid, uidString, sizeof(uidString));
-      //Serial.print("UID as String: ");
+ 
       fastSyslog.logf(LOG_INFO, "uid: %s", uidString);
-      //Serial.println(uidString);
-      //Serial.println(getUserBalance("0486A5DA826180"));
       // Wait for machine to be in enabled state
       if (!waitForMachineState(ENABLED_STATE, 5000) || reader_cancel_todo) {
-          //Serial.println("❌ Machine not enabled in time");
           FAST_LOG_ERROR("❌ Machine not enabled in time");
           waitForCardRemoval();
           continue;
@@ -629,7 +619,6 @@ void reader_loop(void *pvParameters) {
       waitForCardRemoval();
       reader_cancel_todo = false;
       session_end_todo = true;
-      //Serial.println("🔄 Ready for next read...");
       
       // Add a small delay before next loop iteration
       vTaskDelay(200 / portTICK_PERIOD_MS);
@@ -1337,12 +1326,9 @@ cashSaleQueue = xQueueCreate(10, sizeof(CashSale_t));
 
   connectToWiFi();
   setupOTA("TemplateSketch", ssid, password);
-  //syslog.server("10.100.217.225", 5140);
-  //syslog.deviceHostname(MACHINE_ID);
-  //syslog.appName(MACHINE_ID);
-  //syslog.defaultPriority(LOG_KERN);
 
-      if (!fastSyslog.begin("10.100.1.55", 5140, "getraenkeautomat", "getraenkeautomat")) {
+
+      if (!fastSyslog.begin(SYSLOG_SERVER, SYSLOG_PORT, MACHINE_ID, MACHINE_ID)) {
         Serial.println("Failed to initialize FastSyslog!");
         return;
     }
