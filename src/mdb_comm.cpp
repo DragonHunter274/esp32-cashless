@@ -127,7 +127,7 @@ void mdb_loop(void *pvParameters) {
   for (;;) {
     uint8_t checksum = 0x00;
     // MDB requires response within 5ms - use minimal delay to prevent task starvation
-    taskYIELD();  // Allow other tasks to run if needed, but don't block
+    vTaskDelay(1/portTICK_PERIOD_MS);  // Allow other tasks to run if needed, but don't block
 
     // Wait for command byte (wait_forever = true)
     uint16_t coming_read = read_9(&checksum, true);
