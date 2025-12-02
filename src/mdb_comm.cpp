@@ -150,11 +150,7 @@ void mdb_loop(void *pvParameters) {
 
         switch (coming_read & BIT_CMD_SET) {
           case RESET: {
-            if (read_9((uint8_t*) 0, false) == 0xFFFF) { // Timeout
-                fastSyslog.logf(LOG_ERR, "MDB: RESET timeout");
-                break;
-            }
-
+            // RESET is a single-byte command - no additional data to read
             MACHINE_STATE prev_state = machine_state;
             machine_state = INACTIVE_STATE;
             reset_cashless_todo = true;
@@ -280,10 +276,7 @@ void mdb_loop(void *pvParameters) {
             break;
           }
           case POLL: {
-            if (read_9((uint8_t*) 0, false) == 0xFFFF) {
-                fastSyslog.logf(LOG_ERR, "MDB: POLL timeout");
-                break;
-            }
+            // POLL is a single-byte command - no additional data to read
 
             // Periodic state logging and stuck state detection
             static uint16_t poll_counter = 0;
