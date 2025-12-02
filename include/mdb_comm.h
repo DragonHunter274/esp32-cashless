@@ -35,8 +35,8 @@ extern bool vend_success;
 
 // Function declarations
 void mdb_init();
-uint16_t read_9(uint8_t *checksum, bool wait_forever = true);
-void write_9(uint16_t nth9);
+uint16_t IRAM_ATTR read_9(uint8_t *checksum, bool wait_forever = true);
+void IRAM_ATTR write_9(uint16_t nth9);
 void transmitPayloadByUART9(uint8_t *mdb_payload, uint8_t length);
 void mdb_loop(void *pvParameters);
 bool validate_mdb_checksum(uint8_t command, uint8_t *data, uint8_t data_len);

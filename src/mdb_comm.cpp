@@ -29,7 +29,7 @@ void mdb_init() {
 }
 
 // Read 9-bit data
-uint16_t read_9(uint8_t *checksum, bool wait_forever) {
+uint16_t IRAM_ATTR read_9(uint8_t *checksum, bool wait_forever) {
   uint16_t coming_read = 0;
   unsigned long start_wait = micros();
 
@@ -54,7 +54,7 @@ uint16_t read_9(uint8_t *checksum, bool wait_forever) {
 }
 
 // Write 9-bit data
-void write_9(uint16_t nth9) {
+void IRAM_ATTR write_9(uint16_t nth9) {
   digitalWrite(pin_mdb_tx, LOW); // start
   delayMicroseconds(104);
 
