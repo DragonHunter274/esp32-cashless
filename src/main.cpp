@@ -95,13 +95,14 @@ void setup() {
     0
   );
 
-  xTaskCreate(
+  xTaskCreatePinnedToCore(
     cashsale_handler,
     "cashsale_handler",
     4096,
     NULL,
     1,
-    NULL
+    NULL,
+    0
   );
 }
 
