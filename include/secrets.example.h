@@ -16,4 +16,7 @@
 // Machine Configuration
 #define MACHINE_ID "YOUR_MACHINE_ID"
 
+// OTA Update Configuration
+#define OTA_MANIFEST_URL "http://YOUR_SERVER_IP:8080/firmware/manifest.json"
+
 #endif // SECRETS_H

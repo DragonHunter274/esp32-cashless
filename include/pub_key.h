@@ -1,5 +1,7 @@
+#ifndef PUB_KEY_H
+#define PUB_KEY_H
 
-const char* pub_key = R"ROOT_CA(
+inline const char* pub_key = R"PUBKEY(
 -----BEGIN PUBLIC KEY-----
 MIICIjANBgkqhkiG9w0BAQEFAAOCAg8AMIICCgKCAgEA34Ln7jKQvTERnxpURoyW
 kt/k+8/Z9PlYZIXNhvYRC83La4qeg9wZN+EhAnRr9cyNZ21KIOEifTL6PuuXoRmh
@@ -14,4 +16,6 @@ tlsG42MpHzZHIZTWtBR1d7ILb8bb4rkh1Io2B7Ob8lFQYPNUEweIVUcsIZJMR0wZ
 tRIytOFv1fKg9bWVHq1QEN37LOEHlivOqngLsFdWI/k1paudemqddWtzbrvMFmZb
 aqM6rKkTMWgdBQ5b5yrW6oECAwEAAQ==
 -----END PUBLIC KEY-----
-)ROOT_CA";
+)PUBKEY";
+
+#endif // PUB_KEY_H

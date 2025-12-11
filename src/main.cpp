@@ -64,7 +64,6 @@ void setup() {
   }
 
   connectToWiFi();
-  setupOTA("TemplateSketch", ssid, password);
 
   if (!fastSyslog.begin(SYSLOG_SERVER, SYSLOG_PORT, MACHINE_ID, MACHINE_ID)) {
     Serial.println("Failed to initialize FastSyslog!");
@@ -73,6 +72,9 @@ void setup() {
 
   Serial.println("starting up");
   FAST_LOG_INFO("starting up");
+
+  // Initialize OTA update system with signed firmware verification
+  setupOTA(OTA_MANIFEST_URL);
 
   // Create WiFi Monitoring Task
   xTaskCreatePinnedToCore(
@@ -103,6 +105,17 @@ void setup() {
     1,
     NULL,
     0
+  );
+
+  // Create OTA Update Task
+  xTaskCreatePinnedToCore(
+    ota_task,       // Task function
+    "ota_task",     // Task name
+    8192,           // Stack size (larger for HTTPS operations)
+    NULL,           // Parameters
+    1,              // Priority (low priority, background task)
+    NULL,           // Task handle
+    0               // Core 0
   );
 }
 
