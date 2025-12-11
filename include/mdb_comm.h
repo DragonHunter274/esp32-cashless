@@ -5,9 +5,12 @@
 #include "mdb_protocol.h"
 
 // Pin Definitions
-#define pin_mdb_rx  4
-#define pin_mdb_tx  5
-#define pin_mdb_led 13
+#define pin_mdb_rx  GPIO_NUM_4
+#define pin_mdb_tx  GPIO_NUM_5
+#define pin_mdb_led GPIO_NUM_13
+
+// UART Configuration
+#define MDB_UART_NUM UART_NUM_2
 
 // MDB Communication Data Structure
 typedef struct {
@@ -19,7 +22,7 @@ typedef struct {
 extern volatile MACHINE_STATE machine_state;
 extern portMUX_TYPE mdb_mux;
 
-extern volatile bool reset_cashless_todo;
+extern volatile bool cashless_reset_todo;
 extern volatile bool session_begin_todo;
 extern volatile bool session_end_todo;
 extern volatile bool session_cancel_todo;
@@ -35,9 +38,7 @@ extern bool vend_success;
 
 // Function declarations
 void mdb_init();
-uint16_t IRAM_ATTR read_9(uint8_t *checksum, bool wait_forever = true);
-void IRAM_ATTR write_9(uint16_t nth9);
-void transmitPayloadByUART9(uint8_t *mdb_payload, uint8_t length);
+void write_9(uint16_t nth9);
+void write_payload_9(uint8_t *mdb_payload, uint8_t length);
 void mdb_loop(void *pvParameters);
-bool validate_mdb_checksum(uint8_t command, uint8_t *data, uint8_t data_len);
-void mdb_state_watchdog();
+void mdb_cashless_loop(void *pvParameters);
