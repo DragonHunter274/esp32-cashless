@@ -108,8 +108,12 @@ void mdb_cashless_loop(void *pvParameters) {
       available_rx += len;
     }
 
-    // Check if this message is addressed to us (address 0x10)
-    if ((mdb_payload_rx[0] & BIT_ADD_SET) == 0x10) {
+    // Check if this message is addressed to us
+    // 0x10 = Cashless Device #1
+    // 0x18 = Communications Gateway
+    uint8_t device_address = mdb_payload_rx[0] & BIT_ADD_SET;
+
+    if (device_address == 0x10 || device_address == 0x18) {
 
       // Validate checksum
       // MDB checksum = sum of all bytes before the checksum byte
@@ -135,6 +139,110 @@ void mdb_cashless_loop(void *pvParameters) {
       gpio_set_level(pin_mdb_led, 1);
 
       available_tx = 0;
+
+      // Handle Communications Gateway (0x18)
+      if (device_address == 0x18) {
+        uint8_t command = mdb_payload_rx[0] & BIT_CMD_SET;
+
+        switch (command) {
+          case RESET:
+            fastSyslog.logf(LOG_INFO, "MDB: Gateway RESET");
+            // Reset gateway state if needed
+            break;
+
+          case SETUP: {
+            // Parse VMC SETUP command
+            uint8_t vmcFeatureLevel = mdb_payload_rx[2];     // Y1
+            uint8_t vmcScaleFactor = mdb_payload_rx[3];      // Y2
+            uint8_t vmcDecimalPlaces = mdb_payload_rx[4];    // Y3
+
+            fastSyslog.logf(LOG_INFO, "MDB: Gateway SETUP feat=%d scale=%d dec=%d",
+                           vmcFeatureLevel, vmcScaleFactor, vmcDecimalPlaces);
+
+            // Respond with Gateway Configuration
+            mdb_payload_tx[0] = 0x01;   // Z1: COMMS GATEWAY CONFIGURATION
+            mdb_payload_tx[1] = 0x03;   // Z2: Gateway feature level (level 3)
+            mdb_payload_tx[2] = 0x00;   // Z3: Application max response time high byte
+            mdb_payload_tx[3] = 0x05;   // Z4: Application max response time (5 seconds)
+            available_tx = 4;
+            break;
+          }
+
+          case POLL:
+            // Gateway POLL - respond with ACK (no data) or status if needed
+            fastSyslog.logf(LOG_DEBUG, "MDB: Gateway POLL");
+            break;
+
+          case EXPANSION: {
+            // Check for REQUEST_ID subcommand (0x00)
+            if (mdb_payload_rx[1] == 0x00) {
+              fastSyslog.logf(LOG_INFO, "MDB: Gateway EXPANSION REQUEST_ID");
+
+              // Respond with Peripheral ID
+              mdb_payload_tx[0] = 0x06;   // Z1: PERIPHERAL ID
+
+              // Z2-Z4: Manufacturer code (3 bytes ASCII)
+              strncpy((char*)&mdb_payload_tx[1], "FAB", 3);
+
+              // Z5-Z16: Serial number (12 bytes numeric ASCII)
+              strncpy((char*)&mdb_payload_tx[4], "202501000001", 12);
+
+              // Z17-Z28: Model number (12 bytes ASCII)
+              strncpy((char*)&mdb_payload_tx[16], "GWMDB-ESP32 ", 12);
+
+              // Z29-Z30: Software version (2 bytes BCD)
+              mdb_payload_tx[28] = 0x01;  // Version 1.0
+              mdb_payload_tx[29] = 0x00;
+
+              // Z31-Z34: Optional Features (4 bytes, little-endian 32-bit)
+              // b0: File transport layer support (0 = not supported)
+              // b1: Verbose mode (1 = supported)
+              // b2-b31: Reserved (0)
+              mdb_payload_tx[30] = 0b00000010;  // Bit 1 set = Verbose mode enabled
+              mdb_payload_tx[31] = 0x00;
+              mdb_payload_tx[32] = 0x00;
+              mdb_payload_tx[33] = 0x00;
+
+              available_tx = 34;
+            } else {
+              fastSyslog.logf(LOG_INFO, "MDB: Gateway EXPANSION unknown subcmd=0x%02X", mdb_payload_rx[1]);
+            }
+            break;
+          }
+
+          case 0x03: {  // REPORT command (1BH)
+            // REPORT command has variable length with no predefined end
+            // The timeout-based read (already done) determines the end of the command
+            // Report data is in mdb_payload_rx[1] to mdb_payload_rx[available_rx-2]
+
+            uint8_t report_len = available_rx - 2;  // Exclude command and checksum
+
+            fastSyslog.logf(LOG_INFO, "MDB: Gateway REPORT len=%d", report_len);
+
+            // Log report data for debugging (first few bytes)
+            if (report_len > 0) {
+              fastSyslog.logf(LOG_DEBUG, "MDB: REPORT data: %02X %02X %02X...",
+                             mdb_payload_rx[1],
+                             report_len > 1 ? mdb_payload_rx[2] : 0,
+                             report_len > 2 ? mdb_payload_rx[3] : 0);
+            }
+
+            // Process report data here if needed
+            // For now, just acknowledge receipt
+            // available_tx = 0 means we'll send ACK
+            break;
+          }
+
+          default:
+            fastSyslog.logf(LOG_INFO, "MDB: Gateway unknown cmd=0x%02X", command);
+            break;
+        }
+
+        // Send prepared response or ACK
+        // available_tx = 0 means we'll send ACK
+
+      } else {
+        // Handle Cashless Device #1 (0x10) - existing logic
 
       switch (mdb_payload_rx[0] & BIT_CMD_SET) {
 
@@ -361,6 +469,8 @@ void mdb_cashless_loop(void *pvParameters) {
         break;
       }
       }
+
+      } // End of cashless device (0x10) handler
 
       // Transmit the prepared payload via UART
       write_payload_9(mdb_payload_tx, available_tx);
