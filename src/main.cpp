@@ -92,7 +92,7 @@ void setup() {
     "reader_loop",// Task name
     8192,         // Stack size
     NULL,         // Parameters
-    1,            // Priority
+    2,            // Priority (raised from 1 for faster scheduling)
     NULL,         // Task handle
     0
   );

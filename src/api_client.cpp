@@ -26,9 +26,11 @@ int getUserBalance(const char* uid) {
         return -1;
     }
 
+    unsigned long startTime = millis();
     HTTPClient http;
     String url = String(api_base_url) + "/getBalance";
     http.begin(url);
+    http.setTimeout(2000);  // 2 second timeout
     http.addHeader("Content-Type", "application/json");
     http.addHeader("X-API-Key", api_key);
 
@@ -38,6 +40,9 @@ int getUserBalance(const char* uid) {
     serializeJson(jsonRequest, requestBody);
 
     int httpResponseCode = http.POST(requestBody);
+    unsigned long elapsed = millis() - startTime;
+    fastSyslog.logf(LOG_DEBUG, "getBalance took %lums, code: %d", elapsed, httpResponseCode);
+
     if (httpResponseCode == 200) {
         String response = http.getString();
         StaticJsonDocument<200> jsonResponse;
@@ -46,9 +51,7 @@ int getUserBalance(const char* uid) {
         http.end();
         return balance;
     } else {
-        Serial.print("Error fetching balance: ");
-        Serial.println(httpResponseCode);
-        fastSyslog.logf(LOG_ERR, "Error fetching Balance %d", httpResponseCode);
+        fastSyslog.logf(LOG_ERR, "Error fetching Balance %d (took %lums)", httpResponseCode, elapsed);
         http.end();
         return -1;
     }
@@ -66,9 +69,11 @@ int makePurchase(const char* uid, int amount, int product, const char* machine_i
     }
 
     FAST_LOG_DEBUG("entering makePurchase function");
+    unsigned long startTime = millis();
     HTTPClient http;
     String url = String(api_base_url) + "/makePurchase";
     http.begin(url);
+    http.setTimeout(2000);  // 2 second timeout
     http.addHeader("Content-Type", "application/json");
     http.addHeader("X-API-Key", api_key);
 
@@ -81,6 +86,9 @@ int makePurchase(const char* uid, int amount, int product, const char* machine_i
     serializeJson(jsonRequest, requestBody);
 
     int httpResponseCode = http.POST(requestBody);
+    unsigned long elapsed = millis() - startTime;
+    fastSyslog.logf(LOG_DEBUG, "makePurchase took %lums, code: %d", elapsed, httpResponseCode);
+
     if (httpResponseCode == 200) {
         StaticJsonDocument<128> jsonResponse;
         DeserializationError error = deserializeJson(jsonResponse, http.getString());
@@ -94,6 +102,7 @@ int makePurchase(const char* uid, int amount, int product, const char* machine_i
         int transactionId = jsonResponse["transaction_id"];
         return transactionId;
     } else {
+        fastSyslog.logf(LOG_ERR, "makePurchase failed %d (took %lums)", httpResponseCode, elapsed);
         http.end();
         return -1;
     }
@@ -114,6 +123,7 @@ int makeCashPurchase(int amount, int product, const char* machine_id) {
     HTTPClient http;
     String url = String(api_base_url) + "/makeCashPurchase";
     http.begin(url);
+    http.setTimeout(2000);  // 2 second timeout
     http.addHeader("Content-Type", "application/json");
     http.addHeader("X-API-Key", api_key);
 
@@ -154,9 +164,11 @@ bool confirmPurchase(int transactionId) {
         return false;
     }
 
+    unsigned long startTime = millis();
     HTTPClient http;
     String url = String(api_base_url) + "/confirmPurchase";
     http.begin(url);
+    http.setTimeout(2000);  // 2 second timeout
     http.addHeader("Content-Type", "application/json");
     http.addHeader("X-API-Key", api_key);
 
@@ -166,11 +178,14 @@ bool confirmPurchase(int transactionId) {
     serializeJson(jsonRequest, requestBody);
 
     int httpResponseCode = http.POST(requestBody);
+    unsigned long elapsed = millis() - startTime;
+    fastSyslog.logf(LOG_DEBUG, "confirmPurchase took %lums, code: %d", elapsed, httpResponseCode);
     http.end();
 
     if (httpResponseCode == 200) {
         return true;
     } else {
+        fastSyslog.logf(LOG_ERR, "confirmPurchase failed %d (took %lums)", httpResponseCode, elapsed);
         return false;
     }
 }

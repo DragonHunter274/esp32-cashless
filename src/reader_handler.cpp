@@ -91,8 +91,8 @@ bool getAndVerifyBalance(const char* uidString) {
           return true;
       }
 
-      fastSyslog.logf(LOG_ERR, "Failed to get balance (attempt %d/%d)\n", attempts + 1, MAX_ATTEMPTS);
-      vTaskDelay(500 / portTICK_PERIOD_MS);  // Wait before retry
+      fastSyslog.logf(LOG_ERR, "Failed to get balance (attempt %d/%d)", attempts + 1, MAX_ATTEMPTS);
+      vTaskDelay(100 / portTICK_PERIOD_MS);  // Brief wait before retry (reduced from 500ms)
   }
 
   Serial.println("Failed to get balance after all attempts");
