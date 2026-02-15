@@ -1,0 +1,7 @@
+MFRC522.zip
+.DS_Store
+
+# ignore IDE files
+.idea
+cmake
+CMakeLists.txt
