@@ -1,0 +1,58 @@
+# Example GitHub Actions workflow for automatic firmware building and signing
+# This is an EXAMPLE file - rename to build.yml to activate
+
+name: Build and Sign Firmware
+
+on:
+  push:
+    tags:
+      - 'v*'  # Trigger on version tags like v1.0.1
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.x'
+
+    - name: Install PlatformIO
+      run: |
+        pip install platformio
+
+    - name: Restore private key from secrets
+      env:
+        PRIV_KEY: ${{ secrets.FIRMWARE_SIGNING_KEY }}
+      run: |
+        echo "$PRIV_KEY" > priv_key.pem
+        chmod 600 priv_key.pem
+
+    - name: Build firmware
+      run: |
+        pio run
+        # Firmware is automatically signed by post_build_sign.py
+
+    - name: Upload firmware artifacts
+      uses: actions/upload-artifact@v3
+      with:
+        name: firmware-release
+        path: firmware_release/
+
+    - name: Create Release
+      uses: softprops/action-gh-release@v1
+      with:
+        files: |
+          firmware_release/firmware.img
+          firmware_release/manifest.json
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Cleanup
+      if: always()
+      run: |
+        rm -f priv_key.pem

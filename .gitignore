@@ -4,3 +4,7 @@
 .vscode/launch.json
 .vscode/ipch
 include/secrets.h
+
+# OTA Update files - DO NOT COMMIT PRIVATE KEY!
+priv_key.pem
+firmware_release/
